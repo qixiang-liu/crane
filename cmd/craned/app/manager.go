@@ -111,7 +111,9 @@ func Run(ctx context.Context, opts *options.Options) error {
 		return err
 	}
 	// initialize data sources and predictor
+	// 函数初始化实时数据源、历史数据源和数据源提供者。
 	realtimeDataSources, historyDataSources, dataSourceProviders := initDataSources(mgr, opts)
+	// 初始化一个预测器管理器，传入一些选项和数据源。
 	predictorMgr := initPredictorManager(opts, realtimeDataSources, historyDataSources)
 
 	initScheme()
@@ -130,8 +132,9 @@ func Run(ctx context.Context, opts *options.Options) error {
 			klog.Warningf("Run oom recorder failed: %v", err)
 		}
 	}()
-
+	// 初始化一个推荐器管理器。
 	recommenderMgr := initRecommenderManager(opts, podOOMRecorder, realtimeDataSources, historyDataSources)
+	// 初始化一些控制器，传入各种选项、管理器和数据源
 	initControllers(podOOMRecorder, mgr, opts, predictorMgr, recommenderMgr, historyDataSources[providers.PrometheusDataSource])
 	// initialize custom collector metrics
 	initMetricCollector(mgr)
