@@ -304,4 +304,277 @@ Prometheus is a popular open source monitoring system today, through which user-
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">kind&lt;/span>: &lt;span style="color:#ae81ff">Deployment&lt;/span>
 &lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#ae81ff">sample-app&lt;/span>
 &lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="summary">Summary&lt;/h2>
-&lt;p>Due to the complexity of production environments, multi-metric-based autoscaling (CPU/Memory/custom metrics) is often a common choice for production applications, so Effective HPA achieves the effectiveness of helping more businesses land horizontal autoscaling in production environments by covering multi-metric autoscaling with predictive algorithms.&lt;/p></description></item></channel></rss>
+&lt;p>Due to the complexity of production environments, multi-metric-based autoscaling (CPU/Memory/custom metrics) is often a common choice for production applications, so Effective HPA achieves the effectiveness of helping more businesses land horizontal autoscaling in production environments by covering multi-metric autoscaling with predictive algorithms.&lt;/p></description></item><item><title>Docs: How to optimize your application in FinOps era</title><link>/docs/best-practices/how-to-optimize-your-application-resource/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>/docs/best-practices/how-to-optimize-your-application-resource/</guid><description>
+&lt;p>As more and more enterprises migrate their applications to the Kubernetes platform, it has gradually become an important entry point for resource orchestration and scheduling. As we all know, Kubernetes schedules applications based on the resource quotas requested by the applications, so how to properly configure application resource specifications has become the key to improving cluster utilization. This article will share how to correctly configure application resources based on the FinOps open-source project Crane, and how to promote resource optimization practices within the enterprise.&lt;/p>
+&lt;h2 id="kubernetes-how-to-manage-resources">Kubernetes How to manage resources&lt;/h2>
+&lt;h3 id="pod-resource-model">Pod Resource model&lt;/h3>
+&lt;p>In Kubernetes, the desired amount of resources for a Pod can be selectively set by specifying Request/Limit. When the resource Request is specified for a Container in a Pod, Kube-scheduler uses this information to determine which node to schedule the Pod on. When the resource Request and Limit are specified for a Container, kubelet ensures that the running container can access the requested resources through Cgroup parameters and does not use resources beyond the set limit. Kubelet also reserves system resources equal to the Request amount for the container to use.
+example of resource configuration for a Pod：&lt;/p>
+&lt;pre tabindex="0">&lt;code>apiVersion: v1
+kind: Pod
+metadata:
+name: frontend
+spec:
+containers:
+- name: app
+image: images.my-company.example/app:v4
+resources:
+requests:
+memory: &amp;#34;64Mi&amp;#34;
+cpu: &amp;#34;250m&amp;#34;
+limits:
+memory: &amp;#34;128Mi&amp;#34;
+cpu: &amp;#34;500m&amp;#34;
+&lt;/code>&lt;/pre>&lt;p>Once the resource request amount is determined, the resource utilization formula for an application can be derived as follows: Utilization = Resource Usage / Resource Request.&lt;/p>
+&lt;p>Therefore, to improve the utilization of Pods, we need to configure reasonable resource requests.&lt;/p>
+&lt;h3 id="workload-resource-model">Workload Resource model&lt;/h3>
+&lt;p>A workload is an application that runs on Kubernetes, consisting of a group of Pods, such as Deployments and StatefulSets. The number of Pods is referred to as the workload&amp;rsquo;s replica count.&lt;/p>
+&lt;p>The resource utilization formula for a workload is: Workload Utilization = (Pod1 Usage + Pod2 Usage + &amp;hellip; PodN Usage) / (Request * Replicas).&lt;/p>
+&lt;p>As the formula shows, improving workload utilization can not only reduce the Request, but also reduce the Replicas.&lt;/p>
+&lt;h3 id="common-resource-configuration-issues">Common resource configuration issues&lt;/h3>
+&lt;p>The Canadian software company Densify summarized common resource configuration issues in &amp;ldquo;12 RISK OF KUBERNETES RESOURCE MANAGEMENT&amp;rdquo; [1]. In the table below, we have added an analysis dimension of replica counts based on their findings.&lt;/p>
+&lt;table>
+&lt;thead>
+&lt;tr>
+&lt;th>&lt;/th>
+&lt;th>CPU Request&lt;/th>
+&lt;th>Memory Request&lt;/th>
+&lt;th>CPU Limit&lt;/th>
+&lt;th>Memory Limit&lt;/th>
+&lt;th>Replicas&lt;/th>
+&lt;/tr>
+&lt;/thead>
+&lt;tbody>
+&lt;tr>
+&lt;td>Oversized&lt;/td>
+&lt;td>Excess CPU resources lead to more waste of nodes and resources&lt;/td>
+&lt;td>K8s scheduler may request excessive Memory resources, leading to more waste of nodes and resources.&lt;/td>
+&lt;td>Allowing Pods to request excessive CPU resources can create a &amp;rsquo;noisy neighbor&amp;rsquo; risk, affecting other Pods on the same node&lt;/td>
+&lt;td>Allowing Pods to request excessive Memory resources can create a &amp;rsquo;noisy neighbor&amp;rsquo; risk, which in turn can affect other Pods running on the same node&lt;/td>
+&lt;td>Excessive Pods can lead to more waste of nodes and resources&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>Undersized&lt;/td>
+&lt;td>This can lead to excessive stacking of Pods on nodes, and if all CPU resources are exhausted, it can result in contention and risk of CPU throttling at the node level&lt;/td>
+&lt;td>This can lead to excessive stacking of Pods on nodes, and if all Memory resources are exhausted, it can result in the risk of Pod termination (OOM Killer) at the node level&lt;/td>
+&lt;td>The Pod&amp;rsquo;s CPU usage will be limited, and if the actual workload exceeds the limit, it can result in CPU throttling and performance degradation&lt;/td>
+&lt;td>The Pod&amp;rsquo;s Memory usage will be limited, and if the actual workload exceeds the limit, it can trigger the OOM Killer to terminate processes&lt;/td>
+&lt;td>Having too few Pods can result in high utilization rates, leading to stability issues such as performance degradation and OOM Killer&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>Unset&lt;/td>
+&lt;td>K8s scheduler will be uncertain about how many Pods can be scheduled in the cluster, and excessive stacking of Pods can create significant performance risks and uneven workloads&lt;/td>
+&lt;td>The scheduler will be uncertain about how many Pods can be scheduled in the cluster, which can lead to excessive stacking and the risk of Pods being OOM killed&lt;/td>
+&lt;td>Unconstrained Pods can amplify the &amp;rsquo;noisy neighbor&amp;rsquo; effect and create the risk of CPU throttling&lt;/td>
+&lt;td>Unconstrained Pods can amplify the &amp;rsquo;noisy neighbor&amp;rsquo; risk, and if the node&amp;rsquo;s memory is exhausted, it can trigger the OOM Killer to terminate processes&lt;/td>
+&lt;td>N/A&lt;/td>
+&lt;/tr>
+&lt;/tbody>
+&lt;/table>
+&lt;p>As we can see, setting resource limits too low can lead to stability issues, while setting them too high only results in &amp;ldquo;mere&amp;rdquo; resource waste, which can be acceptable during periods of rapid business growth. This is the main reason why resource utilization rates are generally low for many businesses after migrating to the cloud. The following graph shows the resource usage of an application, with 30% resource waste between the peak historical usage of the Pod and its Request amount.
+&lt;img src="/images/resource-waste.jpg" alt="Resource Waste">&lt;/p>
+&lt;h2 id="application-resource-optimization-model">Application Resource Optimization Model&lt;/h2>
+&lt;p>After mastering Kubernetes&amp;rsquo; resource model, we can further derive a resource optimization model for cloud-native applications:&lt;/p>
+&lt;p>&lt;img src="/images/resource-model.png" alt="Crane Overview">&lt;/p>
+&lt;p>The five lines in the graph from top to bottom are:&lt;/p>
+&lt;ol>
+&lt;li>Node Capacity: The total amount of resources in all nodes in the cluster, corresponding to the Capacity of the cluster.&lt;/li>
+&lt;li>Allocated: The total amount of resources allocated by the application, corresponding to the Pod Request.&lt;/li>
+&lt;li>Weekly Peak: The peak resource usage of the application during a certain period in the past. Weekly peak can be used to predict future resource usage, and configuring resource specifications based on weekly peak has higher security and more general applicability.&lt;/li>
+&lt;li>Daily Average Peak: The peak resource usage of the application in the past day.&lt;/li>
+&lt;li>Mean: The average resource usage of the application, corresponding to Usage.&lt;/li>
+&lt;/ol>
+&lt;p>The idle resources can be divided into two categories:&lt;/p>
+&lt;ol>
+&lt;li>Resource Slack: The difference between Capacity and Request.&lt;/li>
+&lt;li>Usage Slack: The difference between Request and Usage.&lt;/li>
+&lt;/ol>
+&lt;p>Total Slack = Resource Slack + Usage Slack&lt;/p>
+&lt;p>The goal of resource optimization is to reduce Resource Slack and Usage Slack. The model provides four steps for reducing waste, in order from top to bottom:&lt;/p>
+&lt;ol>
+&lt;li>Improving packing rate: Improving the packing rate can bring the Capacity and Request closer together. There are many ways to achieve this, such as:&lt;a href="/zh-cn/docs/tutorials/scheduling-pods-based-on-actual-node-load">Dynamic scheduler&lt;/a>、Tencent Cloud Native Node&amp;rsquo;s node amplification function, etc.&lt;/li>
+&lt;li>Adjusting business specifications to reduce resource locking: Adjusting business specifications based on the weekly peak resource usage can reduce the Request to the weekly peak line.&lt;a href="/docs/tutorials/recommendation/resource-recommendation">Resource recommendation&lt;/a> and &lt;a href="/docs/tutorials/recommendation/replicas-recommendation">Replicas Recommendation&lt;/a>can help applications achieve this goal.&lt;/li>
+&lt;li>Adjusting business specifications + scaling to handle burst traffic: Based on the optimization of specifications, HPA can handle burst traffic to reduce the Request to the daily peak line. At this time, the target utilization rate of HPA is low, only to handle burst traffic, and automatic elasticity does not occur most of the time.&lt;/li>
+&lt;li>Adjusting business specifications + scaling to handle daily traffic changes: Based on the optimization of specifications, HPA can handle daily traffic to reduce the Request to the mean. At this time, the target utilization rate of HPA is equal to the average utilization rate of the application.&lt;/li>
+&lt;/ol>
+&lt;p>Based on this model, the open-source project Crane provides dynamic scheduling, recommendation framework, intelligent elasticity, and mixed deployment capabilities, realizing an all-in-one FinOps cloud resource optimization platform. In this article, we will focus on the recommendation framework.&lt;/p>
+&lt;h2 id="optimizing-resource-configuration-through-the-crane-recommendation-framework">Optimizing resource configuration through the Crane recommendation framework&lt;/h2>
+&lt;p>The open-source project Crane has launched the Recommendation Framework, which automatically analyzes the operation of various resources in the cluster and provides optimization suggestions. By analyzing CPU/Memory monitoring data over a period of time and using resource recommendation algorithms, the Recommendation Framework provides resource configuration suggestions, allowing enterprises to make decisions based on the proposed configurations.&lt;/p>
+&lt;p>In the following example, we will demonstrate how to quickly start a full cluster resource recommendation.&lt;/p>
+&lt;p>Before embarking on this cost-cutting journey, you need to install Crane in your environment. Please refer to Crane&amp;rsquo;s installation documentation for guidance.&lt;/p>
+&lt;h3 id="create-recommendationrule">Create RecommendationRule&lt;/h3>
+&lt;p>Here&amp;rsquo;s a RecommendationRule example： workload-rule.yaml。&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">apiVersion&lt;/span>: &lt;span style="color:#ae81ff">analysis.crane.io/v1alpha1&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">kind&lt;/span>: &lt;span style="color:#ae81ff">RecommendationRule&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">metadata&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#ae81ff">workloads-rule&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">spec&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">runInterval&lt;/span>: &lt;span style="color:#ae81ff">24h &lt;/span> &lt;span style="color:#75715e"># run once every 24 hours&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">resourceSelectors&lt;/span>: &lt;span style="color:#75715e"># information about resources&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">kind&lt;/span>: &lt;span style="color:#ae81ff">Deployment&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">apiVersion&lt;/span>: &lt;span style="color:#ae81ff">apps/v1&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">kind&lt;/span>: &lt;span style="color:#ae81ff">StatefulSet&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">apiVersion&lt;/span>: &lt;span style="color:#ae81ff">apps/v1&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">namespaceSelector&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">any&lt;/span>: &lt;span style="color:#66d9ef">true&lt;/span> &lt;span style="color:#75715e"># scan all namespaces&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">recommenders&lt;/span>: &lt;span style="color:#75715e"># Use replica and resource recommenders for Workloads&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#ae81ff">Replicas&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#ae81ff">Resource&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>In this example:&lt;/p>
+&lt;ul>
+&lt;li>Analysis recommendations are run every 24 hours, with the runInterval format set as an interval of time, such as 1h or 1m. Setting it to empty means running only once.&lt;/li>
+&lt;li>The resources to be analyzed are set through the resourceSelectors array. Each resourceSelector selects resources in the k8s cluster based on kind, apiVersion, and name. When name is not specified, it means all resources under the namespaceSelector.&lt;/li>
+&lt;li>The namespaceSelector defines the namespaces of the resources to be analyzed. &amp;ldquo;any: true&amp;rdquo; means selecting all namespaces.&lt;/li>
+&lt;li>The recommenders define which Recommender(s) should be used for analyzing the resources. Currently supported types are: recommenders.&lt;/li>
+&lt;li>The resource types and recommenders need to be matched. For example, the Resource Recommender only supports Deployments and StatefulSets by default. Please refer to the recommender&amp;rsquo;s documentation for which resource types each Recommender supports.&lt;/li>
+&lt;/ul>
+&lt;ol>
+&lt;li>Create a RecommendationRule with the following command, and the recommendation will start immediately after creation.&lt;/li>
+&lt;/ol>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-shell" data-lang="shell">&lt;span style="display:flex;">&lt;span>kubectl apply -f workload-rules.yaml
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>This example will perform resource and replica recommendations for Deployments and StatefulSets in all namespaces.
+2. Check the recommendation progress of the RecommendationRule. Observe the progress of the recommendation task through Status.recommendations. The recommendation tasks are executed sequentially. If the lastStartTime of all tasks is the latest time and the message has a value, it indicates that the current recommendation has been completed.&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-shell" data-lang="shell">&lt;span style="display:flex;">&lt;span>kubectl get rr workloads-rule
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;ol start="3">
+&lt;li>Query the recommendation results with the following command:&lt;/li>
+&lt;/ol>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-shell" data-lang="shell">&lt;span style="display:flex;">&lt;span>kubectl get recommend
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>You can filter the Recommendation by the following labels, for example: kubectl get recommend -l analysis.crane.io/recommendation-rule-name=workloads-rule&lt;/p>
+&lt;h3 id="adjust-resource-configurations-based-on-optimization-recommendations-from-the-recommendation">Adjust resource configurations based on optimization recommendations from the Recommendation.&lt;/h3>
+&lt;p>For resource and replica recommendations, users can PATCH status.recommendedInfo to the Workload to update the resource configurations. For example:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-shell" data-lang="shell">&lt;span style="display:flex;">&lt;span>patchData&lt;span style="color:#f92672">=&lt;/span>&lt;span style="color:#e6db74">`&lt;/span>kubectl get recommend workloads-rule-replicas-rckvb -n default -o jsonpath&lt;span style="color:#f92672">=&lt;/span>&lt;span style="color:#e6db74">&amp;#39;{.status.recommendedInfo}&amp;#39;&lt;/span>&lt;span style="color:#e6db74">`&lt;/span>;kubectl patch Deployment php-apache -n default --patch &lt;span style="color:#e6db74">&amp;#34;&lt;/span>&lt;span style="color:#e6db74">${&lt;/span>patchData&lt;span style="color:#e6db74">}&lt;/span>&lt;span style="color:#e6db74">&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="recommender">Recommender&lt;/h3>
+&lt;p>Currently, Crane supports the following Recommenders:&lt;/p>
+&lt;ul>
+&lt;li>&lt;a href="/docs/tutorials/recommendation/resource-recommendation">&lt;strong>Resource Recommendation&lt;/strong>&lt;/a>: By using the VPA algorithm to analyze the actual usage of applications, Crane recommends more appropriate resource configurations.&lt;/li>
+&lt;li>&lt;a href="/docs/tutorials/recommendation/replicas-recommendation">&lt;strong>Replicas Recommendation&lt;/strong>&lt;/a>: By using the HPA algorithm to analyze the actual usage of applications, Crane recommends more appropriate replica numbers.&lt;/li>
+&lt;li>&lt;a href="/docs/tutorials/recommendation/hpa-recommendation">&lt;strong>HPA Recommendation&lt;/strong>&lt;/a>: Scan the Workloads in the cluster and recommend HPA configurations for Workloads that are suitable for horizontal scaling.&lt;/li>
+&lt;li>&lt;a href="/docs/tutorials/recommendation/idlenode-recommendation">&lt;strong>Idlenode Recommendation&lt;/strong>&lt;/a>: By scanning the state and utilization of nodes in the cluster, Node recommendation helps users find idle Kubernetes nodes.&lt;/li>
+&lt;li>&lt;a href="/docs/tutorials/recommendation/service-recommendation">&lt;strong>Service Recommendation&lt;/strong>&lt;/a>: By scanning the running status of Services in the cluster, Service recommendation helps users find idle Kubernetes Services.&lt;/li>
+&lt;li>&lt;a href="/docs/tutorials/recommendation/pv-recommendation">&lt;strong>PV Recommendation&lt;/strong>&lt;/a>: By scanning the running status of PV in the cluster, PV recommendation helps users find idle Kubernetes PV.&lt;/li>
+&lt;/ul>
+&lt;p>This article focuses on optimizing resource configurations for Workloads, therefore, the following section will focus on resource recommendations and replica recommendations.&lt;/p>
+&lt;h3 id="resource-recommendations">Resource recommendations&lt;/h3>
+&lt;p>Here&amp;rsquo;s an example of resource recommendations:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">status&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">recommendedInfo&lt;/span>: &amp;gt;-&lt;span style="color:#e6db74">
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#e6db74"> &lt;/span> {&lt;span style="color:#e6db74">&amp;#34;spec&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;template&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;spec&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;containers&amp;#34;&lt;/span>:[{&lt;span style="color:#e6db74">&amp;#34;name&amp;#34;&lt;/span>:&lt;span style="color:#e6db74">&amp;#34;craned&amp;#34;&lt;/span>,&lt;span style="color:#e6db74">&amp;#34;resources&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;requests&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;cpu&amp;#34;&lt;/span>:&lt;span style="color:#e6db74">&amp;#34;150m&amp;#34;&lt;/span>,&lt;span style="color:#e6db74">&amp;#34;memory&amp;#34;&lt;/span>:&lt;span style="color:#e6db74">&amp;#34;256Mi&amp;#34;&lt;/span>}}},{&lt;span style="color:#e6db74">&amp;#34;name&amp;#34;&lt;/span>:&lt;span style="color:#e6db74">&amp;#34;dashboard&amp;#34;&lt;/span>,&lt;span style="color:#e6db74">&amp;#34;resources&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;requests&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;cpu&amp;#34;&lt;/span>:&lt;span style="color:#e6db74">&amp;#34;150m&amp;#34;&lt;/span>,&lt;span style="color:#e6db74">&amp;#34;memory&amp;#34;&lt;/span>:&lt;span style="color:#e6db74">&amp;#34;256Mi&amp;#34;&lt;/span>}}}]}}}}
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">currentInfo&lt;/span>: &amp;gt;-&lt;span style="color:#e6db74">
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#e6db74"> &lt;/span> {&lt;span style="color:#e6db74">&amp;#34;spec&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;template&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;spec&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;containers&amp;#34;&lt;/span>:[{&lt;span style="color:#e6db74">&amp;#34;name&amp;#34;&lt;/span>:&lt;span style="color:#e6db74">&amp;#34;craned&amp;#34;&lt;/span>,&lt;span style="color:#e6db74">&amp;#34;resources&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;requests&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;cpu&amp;#34;&lt;/span>:&lt;span style="color:#e6db74">&amp;#34;500m&amp;#34;&lt;/span>,&lt;span style="color:#e6db74">&amp;#34;memory&amp;#34;&lt;/span>:&lt;span style="color:#e6db74">&amp;#34;512Mi&amp;#34;&lt;/span>}}},{&lt;span style="color:#e6db74">&amp;#34;name&amp;#34;&lt;/span>:&lt;span style="color:#e6db74">&amp;#34;dashboard&amp;#34;&lt;/span>,&lt;span style="color:#e6db74">&amp;#34;resources&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;requests&amp;#34;&lt;/span>:{&lt;span style="color:#e6db74">&amp;#34;cpu&amp;#34;&lt;/span>:&lt;span style="color:#e6db74">&amp;#34;200m&amp;#34;&lt;/span>,&lt;span style="color:#e6db74">&amp;#34;memory&amp;#34;&lt;/span>:&lt;span style="color:#e6db74">&amp;#34;256Mi&amp;#34;&lt;/span>}}}]}}}}
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">action&lt;/span>: &lt;span style="color:#ae81ff">Patch&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">conditions&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">type&lt;/span>: &lt;span style="color:#ae81ff">Ready&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">status&lt;/span>: &lt;span style="color:#e6db74">&amp;#39;True&amp;#39;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">lastTransitionTime&lt;/span>: &lt;span style="color:#e6db74">&amp;#39;2022-11-29T04:07:44Z&amp;#39;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">reason&lt;/span>: &lt;span style="color:#ae81ff">RecommendationReady&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">message&lt;/span>: &lt;span style="color:#ae81ff">Recommendation is ready&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">lastUpdateTime&lt;/span>: &lt;span style="color:#e6db74">&amp;#39;2022-11-30T03:07:49Z&amp;#39;&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>recommendedInfo displays the recommended resource configuration, while currentInfo displays the current resource configuration. The format is JSON, and the recommended results can be updated to TargetRef using Kubectl Patch.&lt;/p>
+&lt;h4 id="compute-resource-specification-algorithm">Compute resource specification algorithm&lt;/h4>
+&lt;p>The resource recommendation process is completed in the following steps:&lt;/p>
+&lt;ol>
+&lt;li>Obtain the CPU and memory usage history of the workload in the past week through monitoring data.&lt;/li>
+&lt;li>Based on the historical usage, use the VPA Histogram to take the P99 percentile and multiply it by an amplification factor.&lt;/li>
+&lt;li>OOM Protection: If there have been historical OOM events in the container, consider increasing memory appropriately when making memory recommendations.&lt;/li>
+&lt;li>Resource Specification Regularization: Round up the recommended results to the specified container specifications.
+The basic principle is to set the Request slightly higher than the maximum historical usage based on historical resource usage, and consider factors such as OOM and Pod specifications.&lt;/li>
+&lt;/ol>
+&lt;h4 id="replica-recommendations">Replica recommendations&lt;/h4>
+&lt;p>Here&amp;rsquo;s an example of replica recommendations:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">status&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">recommendedInfo&lt;/span>: &lt;span style="color:#e6db74">&amp;#39;{&amp;#34;spec&amp;#34;:{&amp;#34;replicas&amp;#34;:1}}&amp;#39;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">currentInfo&lt;/span>: &lt;span style="color:#e6db74">&amp;#39;{&amp;#34;spec&amp;#34;:{&amp;#34;replicas&amp;#34;:2}}&amp;#39;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">action&lt;/span>: &lt;span style="color:#ae81ff">Patch&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">conditions&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">type&lt;/span>: &lt;span style="color:#ae81ff">Ready&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">status&lt;/span>: &lt;span style="color:#e6db74">&amp;#39;True&amp;#39;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">lastTransitionTime&lt;/span>: &lt;span style="color:#e6db74">&amp;#39;2022-11-28T08:07:36Z&amp;#39;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">reason&lt;/span>: &lt;span style="color:#ae81ff">RecommendationReady&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">message&lt;/span>: &lt;span style="color:#ae81ff">Recommendation is ready&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">lastUpdateTime&lt;/span>: &lt;span style="color:#e6db74">&amp;#39;2022-11-29T11:07:45Z&amp;#39;&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>The recommendedInfo displays the recommended replica count, and the currentInfo displays the current replica count in JSON format. The recommended results can be updated to TargetRef using Kubectl Patch.&lt;/p>
+&lt;p>The replica recommendation process is completed in the following steps:&lt;/p>
+&lt;ol>
+&lt;li>Obtain the CPU and memory usage history of the workload in the past week through monitoring data.&lt;/li>
+&lt;li>Use the DSP algorithm to predict the future CPU usage for the next week.&lt;/li>
+&lt;li>Calculate the replica count for CPU and memory separately, and take the larger value.&lt;/li>
+&lt;/ol>
+&lt;h4 id="compute-replica-algorithm">Compute replica algorithm&lt;/h4>
+&lt;p>Taking CPU as an example, assuming that the P99 of the historical CPU usage of the workload is 10 cores, and the Pod CPU Request is 5 cores, the target peak utilization is 50%. It can be inferred that 4 replicas are needed to meet the requirement of the peak utilization not being less than 50%.&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#ae81ff">replicas := int32(math.Ceil(workloadUsage / (TargetUtilization * float64(requestTotal))))&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="differences-with-the-community">Differences with the community&lt;/h3>
+&lt;p>According to the resource optimization model, the recommendation framework can reduce the Request of the application to the weekly peak, and the recommendation framework only provides specification recommendations without executing changes, which is more secure and applicable to more business types. If further Request reduction is needed, HPA and other solutions can be considered.&lt;/p>
+&lt;table>
+&lt;thead>
+&lt;tr>
+&lt;th>&lt;/th>
+&lt;th>utilization rate&lt;/th>
+&lt;th>management configuration type&lt;/th>
+&lt;th>change type&lt;/th>
+&lt;/tr>
+&lt;/thead>
+&lt;tbody>
+&lt;tr>
+&lt;td>Community HPA&lt;/td>
+&lt;td>average utilization rate&lt;/td>
+&lt;td>replica number&lt;/td>
+&lt;td>automatic scaling&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>Community VPA&lt;/td>
+&lt;td>approximate peak utilization rate&lt;/td>
+&lt;td>resource Request&lt;/td>
+&lt;td>automatic scaling/recommendation&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>Crane recommendation framework&lt;/td>
+&lt;td>weekly peak utilization rate&lt;/td>
+&lt;td>replica number + resources Request&lt;/td>
+&lt;td>automatic scaling/recommendation&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td>advantages of the recommendation framework&lt;/td>
+&lt;td>Although the weekly peak utilization rate provides relatively small cost reduction space, it is simple to configure, safer, and applicable to more types of applications.&lt;/td>
+&lt;td>Both replica number and resource Request can be recommended simultaneously, and adjustments can be made as needed.&lt;/td>
+&lt;td>Provide recommendation suggestions through CRD/Metric, which is convenient for integration into user systems. In the future, it will support automatic updates through CICD&lt;/td>
+&lt;/tr>
+&lt;/tbody>
+&lt;/table>
+&lt;h2 id="best-practices">Best practices&lt;/h2>
+&lt;p>FinOps recommends using an iterative approach to manage variable costs of cloud services. The continuous management iteration consists of three phases: cost observation (Inform), cost analysis (Recommend), and cost optimization (Operate). In the following section, we will introduce how to use Crane for K8S resource configuration management based on these three phases and the internal practice experience of Tencent.&lt;/p>
+&lt;h3 id="cost-monitoring--calculating-costsbenefits">Cost Monitoring&amp;ndash;Calculating Costs/Benefits&lt;/h3>
+&lt;p>Cost observation is the core key to the cost reduction journey. Only by setting clear goals can cost reduction optimization be targeted. Therefore, users need to establish a monitoring and observation system for cluster resources to evaluate whether cost reduction and efficiency improvement are necessary. For example, what is the packing rate of the cluster? What is the average/peak utilization rate of the cluster? What is the resource usage distribution of each Namespace, and what is the average/peak utilization rate of each Workload?&lt;/p>
+&lt;h3 id="cost-analysis--establishing-systems">Cost Analysis&amp;ndash;Establishing Systems&lt;/h3>
+&lt;p>The Crane recommendation framework provides a complete set of analysis and optimization tools for full-fledged analysis of cluster resources, and records the recommended results in CRD and Metrics for easy integration into business systems.&lt;/p>
+&lt;p>The practice within Tencent is as follows:&lt;/p>
+&lt;ol>
+&lt;li>Use RecommendationRule to recommend resources and replicas for all workloads in the cluster, updated every 12 hours.&lt;/li>
+&lt;li>Display the complete recommendation results separately in the control interface.&lt;/li>
+&lt;li>Display resource/replica recommendations on the workload data display page.&lt;/li>
+&lt;li>Display observation data of the workload in Grafana charts.&lt;/li>
+&lt;li>Provide OpenAPI for businesses to obtain recommendations and optimize them according to business needs.&lt;/li>
+&lt;/ol>
+&lt;h3 id="cost-optimization--progressive-recommendations">Cost Optimization&amp;ndash;Progressive Recommendations&lt;/h3>
+&lt;p>The FinOps Foundation has defined a &amp;ldquo;crawl, walk, run&amp;rdquo; maturity method for FinOps, enabling enterprises to start small and gradually expand in scale, scope, and complexity. Similarly, the premise of cost reduction is to ensure stability, as changes in resource configuration and unreasonable configurations may affect business stability. User optimization processes should follow the same approach:&lt;/p>
+&lt;ol>
+&lt;li>Verify the accuracy of the configuration in the CI/CD environment before updating the production environment.&lt;/li>
+&lt;li>Optimize businesses with severe waste first, and then optimize businesses with relatively low configurations.&lt;/li>
+&lt;li>Optimize non-core businesses first, and then optimize core businesses.&lt;/li>
+&lt;li>Configure recommended parameters based on business characteristics: Online businesses require more resource buffers, while offline businesses can accept higher utilization rates.&lt;/li>
+&lt;li>The release platform prompts users with recommended configurations and updates only after confirmation to prevent unexpected online changes.&lt;/li>
+&lt;li>Some business clusters automatically update workload configurations based on recommended suggestions to achieve higher utilization rates.&lt;/li>
+&lt;/ol>
+&lt;p>In the book &amp;ldquo;Cloud FinOps&amp;rdquo; which introduces FinOps, it shares an example of a Fortune 500 company optimizing resources through an automated system, with the following workflow:&lt;/p>
+&lt;p>&lt;img src="/images/resource-flow.png" alt="Resource flow">&lt;/p>
+&lt;p>Automated configuration optimization is considered an advanced stage in FinOps and is recommended for use in the advanced stages of FinOps implementation. However, you should consider tracking the recommendations and have the corresponding team manually implement the necessary changes.&lt;/p>
+&lt;h2 id="roadmap">Roadmap&lt;/h2>
+&lt;p>Whether or not resource optimization is needed, Crane can be used as a trial object when practicing FinOps. You can first understand the current state of the Kubernetes cluster through cost display, and choose the optimization method based on the problem. Resource configuration optimization, as introduced in this article, is the most direct and common method.&lt;/p>
+&lt;p>In the future, the Crane recommendation framework will evolve towards more accurate, intelligent, and rich goals:&lt;/p>
+&lt;p>-Integration with CI/CD frameworks: Automated configuration updates can further improve utilization rates compared to manual updates and are suitable for business scenarios with higher resource utilization rates.
+-Cost left shift: Discover and solve resource waste earlier through configuration optimization in the CI/CD stage.
+-Configuration recommendation based on application load characteristics: Identify load patterns and burst tasks based on algorithms and provide reasonable recommendations.
+-Resource recommendation for task types: Currently, more support is provided for long-running online businesses, but resource recommendations can also optimize configuration for task-type applications.
+-Analysis of more types of idle resources in Kubernetes: Scan idle resources in the cluster, such as Load Balancer/Storage/Node/GPU.&lt;/p>
+&lt;h2 id="appendix">Appendix&lt;/h2>
+&lt;p>1.The Top 12 Kubernetes Resource Risks: K8s Best Practices: &lt;a href="https://www.densify.com/resources/k8s-resource-risks">Top 12 Kubernetes Resource Risks&lt;/a>&lt;/p></description></item><item><title>Docs: How Kujiale achieve autoscaling with Crane EHPA</title><link>/docs/best-practices/how-kujiale-adopt-ehpa/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>/docs/best-practices/how-kujiale-adopt-ehpa/</guid><description>
+&lt;p>The original article is：&lt;a href="https://mp.weixin.qq.com/s/3X_hHbisynxDwWx9Lnbp-w">How Kujiale achieve autoscaling with Crane EHPA&lt;/a>&lt;/p></description></item></channel></rss>

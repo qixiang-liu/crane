@@ -1,0 +1,179 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Crane – Core Concept</title><link>/docs/core-concept/</link><description>Recent content in Core Concept on Crane</description><generator>Hugo -- gohugo.io</generator><atom:link href="/docs/core-concept/index.xml" rel="self" type="application/rss+xml"/><item><title>Docs: Application Resource Optimize Model</title><link>/docs/core-concept/resource-optimize-model/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>/docs/core-concept/resource-optimize-model/</guid><description>
+&lt;p>Resource optimization is a common optimization strategy in FinOps. Based on the characteristics of Kubernetes applications, we have summarized the &lt;strong>resource optimization model&lt;/strong> for cloud-native applications:&lt;/p>
+&lt;p>&lt;img src="/images/resource-model.png" alt="Resource Model">&lt;/p>
+&lt;p>The five lines in the figure from top to bottom are:&lt;/p>
+&lt;ol>
+&lt;li>Node capacity: the total resources of all nodes in the cluster, corresponding to the Capacity of the cluster&lt;/li>
+&lt;li>Allocated: the total resources applied by the application, corresponding to Pod Request&lt;/li>
+&lt;li>Weekly peak usage: the peak resource usage of the application in the past period. The weekly peak can predict the resource usage in the future period. Configuring resource specifications based on weekly peak can ensure higher security and stronger versatility.&lt;/li>
+&lt;li>Daily peak usage: the peak resource usage of the application in one day&lt;/li>
+&lt;li>Average usage: the average resource usage of the application, corresponding to Usage&lt;/li>
+&lt;/ol>
+&lt;p>There are two types of idle resources:&lt;/p>
+&lt;ol>
+&lt;li>&lt;strong>Resource Slack&lt;/strong>: the difference between Capacity and Request&lt;/li>
+&lt;li>&lt;strong>Usage Slack&lt;/strong>: the difference between Request and Usage&lt;/li>
+&lt;/ol>
+&lt;p>Total Slack = Resource Slack + Usage Slack&lt;/p>
+&lt;p>The goal of resource optimization is to reduce Resource Slack and Usage Slack. The model provides four steps for reducing waste, from top to bottom:&lt;/p>
+&lt;ol>
+&lt;li>Improve packing rate: improving packing rate can make Capacity and Request closer. There are many methods, such as &lt;a href="/docs/tutorials/scheduling-pods-based-on-actual-node-load">dynamic scheduler&lt;/a>, Tencent Cloud native node&amp;rsquo;s node enlargement function, etc.&lt;/li>
+&lt;li>Adjust application requests to reduce resource locking: adjust application specifications based on the weekly peak resource usage to reduce Request to the weekly peak line. &lt;a href="/docs/tutorials/recommendation/resource-recommendation">Resource recommendation&lt;/a> and &lt;a href="/docs/tutorials/recommendation/replicas-recommendation">replica recommendation&lt;/a> can help applications achieve this goal.&lt;/li>
+&lt;li>Application requests adjustment + scaling to cope with sudden traffic bursts: based on the request optimization, use HPA to cope with sudden traffic bursts, and reduce Request to the daily average peak line. At this time, the target utilization rate of HPA is low, only for coping with sudden traffic, and autoscaling does not occur most of the time. &lt;a href="/docs/tutorials/recommendation/hpa-recommendation">HPA recommendation&lt;/a> can scan out applications suitable for elasticity and provide HPA configuration.&lt;/li>
+&lt;li>Application requests adjustment + scaling to cope with daily traffic changes: based on the request optimization, use HPA to cope with daily traffic and reduce Request to the average. At this time, the target utilization rate of HPA is equal to the average utilization rate of the application. &lt;a href="/docs/tutorials/using-effective-hpa-to-scaling-with-effectiveness">EHPA&lt;/a> provide prediction-based horizontal elasticity, helping more applications achieve intelligent elasticity.&lt;/li>
+&lt;/ol></description></item><item><title>Docs: Time Series Forecast Algorithm-DSP</title><link>/docs/core-concept/timeseriees-forecasting-by-dsp/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>/docs/core-concept/timeseriees-forecasting-by-dsp/</guid><description>
+&lt;p>Time series forecasting refers to using historical time series data to predict future values. Time series data typically consists of time and corresponding values, such as resource usage, stock prices, or temperature. DSP (Digital Signal Processing) is a digital signal processing technique that can be used for analyzing and processing time series data.&lt;/p>
+&lt;p>Discrete Fourier Transform (DFT) is a commonly used algorithm in the field of DSP. DFT is a technique that transforms time domain signals into frequency domain signals. By decomposing time domain signals into different frequency components, the characteristics and structures of the signals can be better understood and analyzed. In time series forecasting, DFT can be used to analyze and predict the periodicity and trend of signals, thereby improving the accuracy of forecasts.&lt;/p>
+&lt;p>Crane uses commonly used techniques in the field of Digital Signal Processing (DSP), such as &lt;code>Discrete Fourier Transform (DFT)&lt;/code> and &lt;code>autocorrelation function&lt;/code>, to identify and predict periodic time series.&lt;/p>
+&lt;p>This article will introduce the implementation process and parameter settings of DSP algorithms to help readers understand the principles behind the algorithms and apply them to practical scenarios. (The related code is located in the &lt;code>pkg/prediction/dsp&lt;/code> directory.)&lt;/p>
+&lt;h2 id="flow">Flow&lt;/h2>
+&lt;p>&lt;img src="/images/algorithm/dsp/dsp.png" alt="">&lt;/p>
+&lt;h3 id="preprocessing">Preprocessing&lt;/h3>
+&lt;h4 id="data-imputation">Data imputation&lt;/h4>
+&lt;p>It is common for monitoring data to be missing at certain time points, and Crane will fill in the missing sampling points based on the surrounding data. The method is as follows:&lt;/p>
+&lt;p>Assume that the sampling data between the m-th and n-th sampling points are missing (m+1&amp;lt;n). Let the sampling values at points m-th and n-th be $v_m$ and $v_n$. Then, let $$\Delta = {v_n - v_m \over n-m}$$, the missing data between m-th and n-th are $v_m+\Delta , v_m+2\Delta , &amp;hellip;$&lt;/p>
+&lt;p>&lt;img src="/images/algorithm/dsp/missing_data_fill.png" alt="">&lt;/p>
+&lt;h4 id="remove-outliers">Remove outliers&lt;/h4>
+&lt;p>Occasionally, there may be some extreme outlier data points in the monitoring data, and there are many reasons for these outliers, such as:&lt;/p>
+&lt;ol>
+&lt;li>The monitoring system fills missing sampling points with 0 values;&lt;/li>
+&lt;li>The monitored component reports incorrect indicator data due to its own bugs;&lt;/li>
+&lt;li>The application consumes resources far beyond normal operation when starting up.&lt;/li>
+&lt;/ol>
+&lt;p>These extreme outlier points will interfere with the periodic judgment of the signal and need to be removed. try as follows:&lt;/p>
+&lt;p>Select the $P99.9$ and $P0.1$ of all sampling points in the actual sequence as the upper and lower threshold values, respectively. If a sampling value is lower than the lower limit or higher than the upper limit, set the value of the sampling point to the previous sampling value.&lt;/p>
+&lt;p>&lt;img src="/images/algorithm/dsp/remove_outliers.png" alt="">&lt;/p>
+&lt;h4 id="discrete-fourier-transform">Discrete Fourier Transform&lt;/h4>
+&lt;p>Performing a fast discrete Fourier transform (FFT) on the monitored time series (assuming a length of $N$) generates a spectrogram that intuitively displays the signal&amp;rsquo;s frequency spectrum as &amp;ldquo;impulses&amp;rdquo; at various discrete points $k$.
+The vertical height of each impulse represents the &amp;ldquo;amplitude&amp;rdquo; of the periodic component corresponding to $k$, where $k$ takes values in the range $(0,1,2, &amp;hellip; N-1)$.&lt;/p>
+&lt;p>$k = 0$ corresponds to the &amp;ldquo;DC component&amp;rdquo; of the signal, which has no effect on the signal&amp;rsquo;s periodicity and can be ignored.&lt;/p>
+&lt;p>Due to the conjugate symmetry of the first half and second half of the frequency spectrum sequence after the discrete Fourier transform, the graph is symmetric about the axis and only the first half $N/2$ needs to be considered.&lt;/p>
+&lt;p>The period corresponding to $k$ is $$T = {N \over k} \bullet SampleInterval$$&lt;/p>
+&lt;p>To determine whether a signal has a period $T$, it is necessary to observe at least double of length $T$. Therefore, the maximum period that can be identified through a sequence of length $N$ is $N/2$. Thus, $k = 1$ can be ignored.&lt;/p>
+&lt;p>Therefore, the range of values for $k$ is $(2, 3, &amp;hellip; , N/2)$, corresponding to periods of $N/2, N/3, &amp;hellip;$ This is the &amp;ldquo;resolution&amp;rdquo; of period information that FFT can provide. If a signal&amp;rsquo;s period does not fall on $N/k$, it will be spread over the entire frequency domain, leading to &amp;ldquo;frequency leakage.&amp;rdquo;&lt;/p>
+&lt;p>Fortunately, in actual production environments, the applications we usually encounter (especially online services) have regular cycles, often on a &amp;ldquo;daily&amp;rdquo; basis. Certain businesses may exhibit a &amp;ldquo;weekend effect,&amp;rdquo; where behavior on weekends differs from that on weekdays. However, when observed at the &amp;ldquo;weekly&amp;rdquo; level, they still exhibit good periodicity.&lt;/p>
+&lt;p>Crane does not attempt to discover periodicity of arbitrary lengths, but instead specifies several fixed cycle lengths（$1d、7d$）for detection. The sequence length $N$ is ensured to be a multiple of the target detection period $T$ by trimming or padding the sequence, for example: $T=1d，N=3d；T=7d，N=14d$.&lt;/p>
+&lt;p>We have collected some monitoring indicators for applications from production environments and saved them in CSV format under the &lt;code>pkg/prediction/dsp/test_data&lt;/code> directory.&lt;/p>
+&lt;p>For example, the &lt;code>input0.csv&lt;/code> file contains 8 days of CPU monitoring data for an application, with the corresponding time series shown in the following graph:
+&lt;img src="/images/algorithm/dsp/input0.png" alt="">&lt;/p>
+&lt;p>As we can see, although the data varies from day to day, the overall &amp;ldquo;pattern&amp;rdquo; is still quite consistent.&lt;/p>
+&lt;p>Performing an FFT on this sequence yields the following frequency spectrum:
+&lt;img src="/images/algorithm/dsp/spectrum.png" alt="">&lt;/p>
+&lt;p>We can see that the &amp;ldquo;amplitude&amp;rdquo; is significantly higher at several points than at other points in the spectrum. These points can be used as our &amp;ldquo;candidate periods&amp;rdquo; for further verification.&lt;/p>
+&lt;p>The previous explanation was based on our intuitive judgement, how does Crane select its &amp;ldquo;candidate periods&amp;rdquo;?&lt;/p>
+&lt;ol>
+&lt;li>
+&lt;p>Performing a random permutation of the original sequence $\vec x(n)$ results in the sequence $\vec x&amp;rsquo;(n)$. Applying the FFT to $\vec x&amp;rsquo;(n)$ yields $\vec X&amp;rsquo;(k)$, let $P_{max} = argmax|\vec X&amp;rsquo;(k)|$.&lt;/p>
+&lt;/li>
+&lt;li>
+&lt;p>Repeat the above operation 100 times to obtain 100 values of $P_{max}$, then set $P_{threshold}$=$P99$.&lt;/p>
+&lt;/li>
+&lt;li>
+&lt;p>Compute the FFT of the original sequence $\vec x(n)$ to obtain $\vec X(f)$. Traverse $k = 2, 3, &amp;hellip;$, and if $P_k = |X(k)| &amp;gt; P_{threshold}$, then add $k$ to the list of candidate periods.&lt;/p>
+&lt;/li>
+&lt;/ol>
+&lt;h4 id="auto-correlation-function">Auto Correlation Function&lt;/h4>
+&lt;p>Auto Correlation Function (ACF) is the cross-correlation of a signal with itself at different time points. In simple terms, it is a function of the time lag between two observations that measures the similarity between them.&lt;/p>
+&lt;p>Crane uses circular autocorrelation function (Circular ACF), which first extends the time series of length $N$ by using $N$ as the period. This means that the sequence $\vec x(n)$ is copied over the interval $&amp;hellip;, [-N, -1], [N, 2N-1], &amp;hellip;$, resulting in a new sequence $\vec x&amp;rsquo;(n)$ that is used for analysis.&lt;/p>
+&lt;p>The correlation coefficient between $\vec x&amp;rsquo;(n+k)$ and $\vec x&amp;rsquo;(n)$ is computed for each shift $k=1,2,3,&amp;hellip;N/2$, where $\vec x&amp;rsquo;(n)$is shifted by k.
+$$r_k={\displaystyle\sum_{i=-k}^{N-k-1} (x_i-\mu)(x_{i+k}-\mu) \over \displaystyle\sum_{i=0}^{N-1} (x_i-\mu)^2}\ \ \ \mu: mean$$&lt;/p>
+&lt;p>Instead of directly computing the ACF using the definition mentioned above, Crane uses the following formula and performs two FFT operations to calculate the ACF in $O(nlogn)$ time.
+$$\vec r = IFFT(|FFT({\vec x - \mu \over \sigma})|^2)\ \ \ \mu: mean,\ \sigma: standard\ deviation$$&lt;/p>
+&lt;p>The ACF is represented graphically as shown below, where the x-axis represents the time lag $k$ and the y-axis represents the autocorrelation coefficient $r_k$, which reflects the degree of similarity between the shifted signal and the original signal.&lt;/p>
+&lt;p>&lt;img src="/images/algorithm/dsp/acf.png" alt="">&lt;/p>
+&lt;p>Crane verifies if the autocorrelation coefficient at each candidate period is located at the &amp;ldquo;peak of the curve&amp;rdquo;. It selects the candidate period that corresponds to the highest peak as the primary cycle (fundamental period) of the entire time series and uses it for prediction.&lt;/p>
+&lt;p>How to determine the &amp;ldquo;peak of the curve&amp;rdquo;?&lt;/p>
+&lt;p>Crane selects a section of the curve on each side and performs linear regression separately. If the slope of the left and right lines after regression are greater than and less than zero respectively, then the point is considered to be at a &amp;ldquo;peak&amp;rdquo;.&lt;/p>
+&lt;p>&lt;img src="/images/algorithm/dsp/linear_regression.png" alt="">&lt;/p>
+&lt;h4 id="predict">Predict&lt;/h4>
+&lt;p>Based on the primary cycle obtained in the previous step, Crane provides two methods to fit (predict) the time series data for the next cycle.
+&lt;strong>maxValue&lt;/strong>&lt;/p>
+&lt;p>The first method is to select the maximum value at time $t$(e.g. 6:00 PM) for each of the past few cycles, and use it as the predicted value for the next cycle at time $t$&lt;/p>
+&lt;p>&lt;img src="/images/algorithm/dsp/max_value.png" alt="">
+&lt;strong>fft&lt;/strong>&lt;/p>
+&lt;p>The second method is to perform FFT on the original time series to obtain a frequency spectrum sequence, remove the &amp;ldquo;high-frequency noise&amp;rdquo;, and then perform IFFT (inverse fast Fourier transform). The resulting time series is used as the predicted result for the next cycle.&lt;/p>
+&lt;h2 id="applicate">Applicate&lt;/h2>
+&lt;p>Crane provides TimeSeriesPrediction as a CRD, allowing users to predict various time series data, such as CPU utilization rates of the workload, application QPS, and so on.&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">apiVersion&lt;/span>: &lt;span style="color:#ae81ff">prediction.crane.io/v1alpha1&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">kind&lt;/span>: &lt;span style="color:#ae81ff">TimeSeriesPrediction&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">metadata&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#ae81ff">tsp-workload-dsp&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">namespace&lt;/span>: &lt;span style="color:#ae81ff">default&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">spec&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">targetRef&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">apiVersion&lt;/span>: &lt;span style="color:#ae81ff">apps/v1&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">kind&lt;/span>: &lt;span style="color:#ae81ff">Deployment&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#ae81ff">test&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">namespace&lt;/span>: &lt;span style="color:#ae81ff">default&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">predictionWindowSeconds&lt;/span>: &lt;span style="color:#ae81ff">7200&lt;/span> &lt;span style="color:#75715e"># Provide the predicted data for the next 7200 seconds (2 hours) and write it to the status field in Crane&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">predictionMetrics&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">resourceIdentifier&lt;/span>: &lt;span style="color:#ae81ff">workload-cpu&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">type&lt;/span>: &lt;span style="color:#ae81ff">ExpressionQuery&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">expressionQuery&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">expression&lt;/span>: &lt;span style="color:#e6db74">&amp;#39;sum (irate (container_cpu_usage_seconds_total{container!=&amp;#34;&amp;#34;,image!=&amp;#34;&amp;#34;,container!=&amp;#34;POD&amp;#34;,pod=~&amp;#34;^test-.*$&amp;#34;}[1m]))&amp;#39;&lt;/span> &lt;span style="color:#75715e"># Query statement to retrieve historical monitoring data&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">algorithm&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">algorithmType&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;dsp&amp;#34;&lt;/span> &lt;span style="color:#75715e"># Specify the prediction algorithm as dsp&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">dsp&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">sampleInterval&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;60s&amp;#34;&lt;/span> &lt;span style="color:#75715e"># The sampling interval for monitoring data is 1 minute.&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">historyLength&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;15d&amp;#34;&lt;/span> &lt;span style="color:#75715e"># Pull the monitoring metrics from the past 15 days as the basis for prediction&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">estimators&lt;/span>: &lt;span style="color:#75715e"># Specify the prediction method, including maxValue and fft. Multiple estimators with different configurations can be specified for each method, and Crane will select the one with the highest fitting degree to generate the prediction results. If not specified, fft will be used by default&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># maxValue:&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># - marginFraction: &amp;#34;0.1&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">fft&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">marginFraction&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;0.2&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">lowAmplitudeThreshold&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;1.0&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">highFrequencyThreshold&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;0.05&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">minNumOfSpectrumItems&lt;/span>: &lt;span style="color:#ae81ff">10&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">maxNumOfSpectrumItems&lt;/span>: &lt;span style="color:#ae81ff">20&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>The meanings of some dsp parameters in the example above are as follows:&lt;/p>
+&lt;p>&lt;strong>maxValue&lt;/strong>&lt;/p>
+&lt;p>&lt;code>marginFraction&lt;/code>: After fitting the next cycle of the sequence, each predicted value is multiplied by 1 + marginFraction. For example, if marginFraction = 0.1, it means multiplying by 1.1. The purpose of marginFraction is to magnify or reduce the predicted data by a certain proportion.&lt;/p>
+&lt;p>&lt;strong>fft&lt;/strong>&lt;/p>
+&lt;p>&lt;code>marginFraction&lt;/code>: After fitting the next cycle of the sequence, each predicted value is multiplied by 1 + marginFraction. For example, if marginFraction = 0.1, it means multiplying by 1.1. The purpose of marginFraction is to magnify or reduce the predicted data by a certain proportion.&lt;/p>
+&lt;p>&lt;code>lowAmplitudeThreshold&lt;/code>: The lower limit of spectral amplitude. All frequency components below this lower limit will be filtered out.&lt;/p>
+&lt;p>&lt;code>highFrequencyThreshold&lt;/code>: The upper limit of frequency. All frequency components above this upper limit will be filtered out. The unit is Hz. For example, if you want to ignore the cycle component with a length less than 1 hour, set highFrequencyThreshold = 1/3600.&lt;/p>
+&lt;p>&lt;code>minNumOfSpectrumItems&lt;/code>: The minimum number of frequency components to be retained.&lt;/p>
+&lt;p>&lt;code>maxNumOfSpectrumItems&lt;/code>：The maximum number of frequency components to be retained.&lt;/p>
+&lt;p>In simple terms, the fewer frequency components retained, the lower the upper frequency limit, and the higher the spectral amplitude lower limit, the smoother the predicted curve will be, but some details will be lost. Conversely, more detailed features are preserved with more frequency components retained, resulting in a more jagged curve.&lt;/p>
+&lt;p>Below are two predicted curves for the same time period. The blue and green lines have different highFrequencyThreshold values of $0.01$ and $0.001$, respectively. The blue curve filters out more high frequency components, resulting in a smoother curve.&lt;/p>
+&lt;p>&lt;img src="/images/algorithm/dsp/lft_0_001.png" alt=""> &lt;img src="/images/algorithm/dsp/lft_0_01.png" alt="">&lt;/p>
+&lt;p>There is no single parameter configuration that is suitable for all time series. Usually, it is necessary to adjust the algorithm parameters according to the characteristics of the application indicators in order to obtain the best prediction results.
+Crane provides a web interface that allows users to intuitively see the prediction results after adjusting the parameters. The steps are as follows:&lt;/p>
+&lt;ol>
+&lt;li>Modify the parameters of estimators in TimeSeriesPrediction.&lt;/li>
+&lt;li>Access the &lt;code>api/prediction/debug/&amp;lt;namespace&amp;gt;/&amp;lt;timeseries prediction name&amp;gt;&lt;/code> of the Crane HTTP server to view the parameter effect (as shown below).&lt;/li>
+&lt;/ol>
+&lt;p>&lt;img src="/images/algorithm/dsp/dsp_debug.png" alt="">&lt;/p>
+&lt;p>The above steps can be executed multiple times until satisfactory prediction results are obtained.&lt;/p>
+&lt;p>&lt;strong>Debug locally through port-forward.&lt;/strong>&lt;/p>
+&lt;p>The port of the Crane HTTP server is set by the &amp;ndash;server-bind-port startup parameter of Crane, and the default value is 8082.&lt;/p>
+&lt;p>Open the terminal&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-shell" data-lang="shell">&lt;span style="display:flex;">&lt;span>$kubectl -n crane-system port-forward service/craned 8082:8082
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>Forwarding from 127.0.0.1:8082 -&amp;gt; &lt;span style="color:#ae81ff">8082&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>Forwarding from &lt;span style="color:#f92672">[&lt;/span>::1&lt;span style="color:#f92672">]&lt;/span>:8082 -&amp;gt; &lt;span style="color:#ae81ff">8082&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>Open the browser and visit&lt;code>http://localhost:8082/api/prediction/debug/&amp;lt;namespace&amp;gt;/&amp;lt;timeseries prediction name&amp;gt;&lt;/code>&lt;/p></description></item><item><title>Docs: Architecture</title><link>/docs/core-concept/architecture/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>/docs/core-concept/architecture/</guid><description>
+&lt;p>The overall architecture of Crane is shown as below:&lt;/p>
+&lt;p>&lt;img src="/images/crane-arch.png" alt="Crane Arch&amp;quot;">&lt;/p>
+&lt;p>&lt;strong>Craned&lt;/strong>&lt;/p>
+&lt;p>Craned is the core component which manage the lifecycle of CRDs and APIs. It&amp;rsquo;s deployed by a &lt;code>Deployment&lt;/code> which consists of two container:&lt;/p>
+&lt;ul>
+&lt;li>Craned: Operators for management CRDs, WebApi for Dashboard, Predictors that provide query TimeSeries API.&lt;/li>
+&lt;li>Dashboard: Web component that built from TDesign&amp;rsquo;s Starter, provide an easy-to-use UI for crane users.&lt;/li>
+&lt;/ul>
+&lt;p>&lt;strong>Fadvisor&lt;/strong>&lt;/p>
+&lt;p>Fadvisor provides a collection of exporters which collect cloud resource pricing and billing data and ship to your monitoring system like Prometheus. Fadvisor support Multi-Cloud Pricing API by &lt;code>Cloud Provider&lt;/code>.&lt;/p>
+&lt;p>&lt;strong>Metric Adapter&lt;/strong>&lt;/p>
+&lt;p>Metric Adapter implements a &lt;code>Custom Metric Apiserver&lt;/code>. Metric Adapter consume Crane CRDs and provide HPA Metrics by &lt;code>Custom/External Metric API&lt;/code>.&lt;/p>
+&lt;p>&lt;strong>Crane Agent&lt;/strong>&lt;/p>
+&lt;p>Crane Agent is a &lt;code>DaemonSet&lt;/code> that runs in each node.&lt;/p>
+&lt;h2 id="repositories">Repositories&lt;/h2>
+&lt;p>Crane is composed of the following components:&lt;/p>
+&lt;ul>
+&lt;li>&lt;a href="https://github.com/gocrane/crane/tree/main/cmd/craned">craned&lt;/a> - main crane control plane.&lt;/li>
+&lt;li>&lt;a href="https://github.com/gocrane/crane/tree/main/cmd/metric-adapter">metric-adaptor&lt;/a> - Metric server for driving the scaling.&lt;/li>
+&lt;li>&lt;a href="https://github.com/gocrane/crane/tree/main/cmd/crane-agent">crane-agent&lt;/a> - Ensure critical workloads SLO based on abnormally detection.&lt;/li>
+&lt;li>&lt;a href="https://github.com/gocrane/api">gocrane/api&lt;/a> - This repository defines component-level APIs for the Crane platform.&lt;/li>
+&lt;li>&lt;a href="https://github.com/gocrane/fadvisor">gocrane/fadvisor&lt;/a> - Financial advisor which collect resource prices from cloud API.&lt;/li>
+&lt;li>&lt;a href="https://github.com/gocrane/crane-scheduler">gocrane/crane-scheduler&lt;/a> - A Kubernetes scheduler which can schedule pod based on actual node load.&lt;/li>
+&lt;li>&lt;a href="https://github.com/gocrane/kubectl-crane">kubectl-crane&lt;/a> - Kubectl plugin for crane, including recommendation and cost estimate.&lt;/li>
+&lt;/ul></description></item></channel></rss>
