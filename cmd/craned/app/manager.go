@@ -274,14 +274,21 @@ func initControllers(oomRecorder oom.Recorder, mgr ctrl.Manager, opts *options.O
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.CraneAutoscaling) {
 		var ehpaController = &ehpa.EffectiveHPAController{
-			Client:      mgr.GetClient(),
-			Scheme:      mgr.GetScheme(),
-			RestMapper:  mgr.GetRESTMapper(),
-			Recorder:    mgr.GetEventRecorderFor("effective-hpa-controller"),
+			// Client是k8s apisever的客户端，客户端可以对 Kubernetes 对象执行 CRUD 操作。
+			Client: mgr.GetClient(),
+			// Scheme 定义了序列化和反序列化 API 对象的方法，一个类型
+			// 用于在 Go 之间转换组、版本和种类信息的注册表模式，以及不同版本的 Go 模式之间的映射。 一个方案是随着时间的推移，版本化 API 和版本化配置的基础。
+			Scheme: mgr.GetScheme(),
+			// RestMapper 允许客户端将资源映射到种类，并映射种类和版本到用于操作这些对象的接口。
+			RestMapper: mgr.GetRESTMapper(),
+			// Recorder 事件上报客户端
+			Recorder: mgr.GetEventRecorderFor("effective-hpa-controller"),
+			// ScaleClient 副本数控制客户端
 			ScaleClient: scaleClient,
-			Config:      opts.EhpaControllerConfig,
+			// Config ehpa的核心配置，主要配置是创建hpa时要向下传递的Label和Annotation，它们都有根据前缀匹配ehpa的配置和直接根据配置向下传播的配置
+			Config: opts.EhpaControllerConfig,
 		}
-
+		// 调用SetupWithManager启动ehpa控制
 		if err := (ehpaController).SetupWithManager(mgr); err != nil {
 			klog.Exit(err, "unable to create controller", "controller", "EffectiveHPAController")
 		}
