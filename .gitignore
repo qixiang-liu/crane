@@ -18,7 +18,8 @@ vendor/
 pkg/web/build
 pkg/web/.env
 pkg/web/node_modules
-testing
+testing/config.yaml
+testing/kube-config
 site/resources
 site/public
 site/.hugo_build.lock
